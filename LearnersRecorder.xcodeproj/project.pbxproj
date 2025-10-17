@@ -271,11 +271,12 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record your voice for language learning practice.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app needs speech to text access to provide live transcription features.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2025.10.17;
 				PRODUCT_BUNDLE_IDENTIFIER = org.tipitakapali.macos.LearnersRecorder;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -314,11 +315,12 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record your voice for language learning practice.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app needs speech to text access to provide live transcription features.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2025.10.17;
 				PRODUCT_BUNDLE_IDENTIFIER = org.tipitakapali.macos.LearnersRecorder;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

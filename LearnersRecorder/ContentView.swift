@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import Accelerate
 import Combine
+import Speech
 
 // MARK: - Models
 struct Recording: Identifiable, Codable {
@@ -280,9 +281,107 @@ extension AudioManager: AVAudioRecorderDelegate, AVAudioPlayerDelegate {
     }
 }
 
+// MARK: - Speech ViewModel
+@MainActor
+class SpeechViewModel: ObservableObject {
+    @Published var transcribedText: String = "Your transcribed text will appear here."
+    @Published var isRecording: Bool = false
+    @Published var errorMessage: String?
+
+    private var speechRecognizer: SFSpeechRecognizer?
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private let audioEngine = AVAudioEngine()
+
+    init() {
+        speechRecognizer = SFSpeechRecognizer()
+        requestSpeechAuthorization()
+    }
+
+    private func requestSpeechAuthorization() {
+        SFSpeechRecognizer.requestAuthorization { authStatus in
+            DispatchQueue.main.async {
+                if authStatus != .authorized {
+                    self.errorMessage = "Speech recognition authorization was denied. Please enable it in System Settings."
+                }
+            }
+        }
+    }
+
+    func toggleRecording() {
+        if isRecording {
+            stopRecording()
+        } else {
+            startRecording()
+        }
+    }
+
+    private func startRecording() {
+        guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
+            self.errorMessage = "Speech recognizer is not available for the current locale."
+            return
+        }
+
+        self.errorMessage = nil
+
+        do {
+            let inputNode = audioEngine.inputNode
+            let recordingFormat = inputNode.outputFormat(forBus: 0)
+
+            recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+            guard let recognitionRequest = recognitionRequest else {
+                fatalError("Unable to create an SFSpeechAudioBufferRecognitionRequest object.")
+            }
+            recognitionRequest.shouldReportPartialResults = true
+
+            recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { result, error in
+                var isFinal = false
+                if let result = result {
+                    self.transcribedText = result.bestTranscription.formattedString
+                    isFinal = result.isFinal
+                }
+
+                if error != nil || isFinal {
+                    self.audioEngine.stop()
+                    inputNode.removeTap(onBus: 0)
+                    self.recognitionRequest = nil
+                    self.recognitionTask = nil
+
+                    DispatchQueue.main.async {
+                        self.isRecording = false
+                    }
+                }
+            }
+
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+                self.recognitionRequest?.append(buffer)
+            }
+
+            audioEngine.prepare()
+            try audioEngine.start()
+
+            self.transcribedText = "Listening..."
+            self.isRecording = true
+        } catch {
+            self.errorMessage = "Error starting recording: \(error.localizedDescription)"
+            self.isRecording = false
+        }
+    }
+
+    private func stopRecording() {
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        recognitionRequest?.endAudio()
+        self.isRecording = false
+        self.recognitionRequest = nil
+        self.recognitionTask = nil
+    }
+}
+
 // MARK: - Views
 struct ContentView: View {
     @StateObject private var audioManager = AudioManager()
+    @StateObject private var speechViewModel = SpeechViewModel()
     @State private var selectedRecording: Recording?
     @State private var showingRenameAlert = false
     @State private var newName = ""
@@ -360,10 +459,10 @@ struct ContentView: View {
                     .padding()
                 }
             }
-            .frame(minWidth: 320, maxWidth: 400)
+            .frame(minWidth: 200, idealWidth: 250, maxWidth: 300) // Adjusted width constraints
             .background(Color(NSColor.controlBackgroundColor))
             
-            // Right panel - Record button and comparison
+            // Right panel - Record button and speech-to-text
             VStack(spacing: 30) {
                 // Title and description
                 VStack(spacing: 8) {
@@ -390,25 +489,44 @@ struct ContentView: View {
                     }
                 )
                 
-                // Comparison view
-                if audioManager.recordings.count >= 2 {
-                    ComparisonView(recordings: Array(audioManager.recordings.prefix(5)))
-                }
-                
-                // Use cases
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Source code:")
+                // Speech-to-text section
+                VStack(spacing: 20) {
+                    Text("Live Speech to Text")
                         .font(.headline)
-                    
-                    ForEach([
-                        "https://github.com/vpnry/learners_recorder"
-                    ], id: \.self) { useCase in
-                        HStack {
-                            Link(useCase, destination: URL(string: useCase)!)
-                                .font(.body)
-                                .foregroundColor(.primary)
-                            Spacer()
+
+                    ScrollView {
+                        Text(speechViewModel.transcribedText)
+                            .font(.body)
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(minHeight: 100, maxHeight: 200)
+                    .background(Color(NSColor.textBackgroundColor))
+                    .cornerRadius(10)
+
+                    Button(action: speechViewModel.toggleRecording) {
+                        ZStack {
+                            Circle()
+                                .fill(speechViewModel.isRecording ? Color.orange : Color.green) // Changed colors to differentiate
+                                .frame(width: 150, height: 150)
+
+                            VStack(spacing: 8) {
+                                Image(systemName: speechViewModel.isRecording ? "stop.fill" : "mic.fill")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.white)
+
+                                Text(speechViewModel.isRecording ? "Stop Transcription" : "Live Transcription")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
                         }
+                    }
+                    .buttonStyle(PlainButtonStyle()) // Removed default button background
+
+                    if let errorMessage = speechViewModel.errorMessage {
+                        Text("Error: \(errorMessage)")
+                            .foregroundColor(.red)
+                            .padding()
                     }
                 }
                 .padding()
@@ -619,51 +737,6 @@ struct WaveformView: View {
                 }
             }
         }
-    }
-}
-
-struct ComparisonView: View {
-    let recordings: [Recording]
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Duration Comparison")
-                .font(.headline)
-            
-            VStack(spacing: 8) {
-                ForEach(recordings) { recording in
-                    HStack {
-                        Text(recording.name)
-                            .font(.system(size: 12))
-                            .frame(width: 100, alignment: .leading)
-                            .lineLimit(1)
-                        
-                        GeometryReader { geometry in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.gray.opacity(0.1))
-                                
-                                let maxDuration = recordings.map(\.duration).max() ?? 1
-                                let barWidth = (maxDuration > 0) ? (geometry.size.width * (recording.duration / maxDuration)) : 0
-                                
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.accentColor.opacity(0.6))
-                                    .frame(width: barWidth)
-                            }
-                        }
-                        .frame(height: 20)
-                        
-                        Text(recording.formattedDuration)
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(width: 60)
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
-        .frame(maxWidth: 500)
     }
 }
 
