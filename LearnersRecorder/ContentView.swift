@@ -496,7 +496,8 @@ struct ContentView: View {
 
                     ScrollView {
                         Text(speechViewModel.transcribedText)
-                            .font(.body)
+//                            .font(.body)
+                            .font(.system(size: 16))
                             .padding()
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
